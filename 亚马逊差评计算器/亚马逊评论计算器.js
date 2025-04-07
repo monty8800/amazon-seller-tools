@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         亚马逊评论计算优化版(Enhanced Amazon Review Calculator)
 // @namespace    https://github.com/monty8800/amazon-seller-tools
-// @version      3.3
+// @version      3.4
 // @description  精确计算各星级评价数量及提升评分所需五星好评数，支持全球亚马逊站点
 // @author       Monty & Assistant
 // @match        *://*.amazon.com/*dp/*
@@ -45,6 +45,13 @@ GM_addStyle(`
     justify-content: space-between;
     align-items: center;
 }
+#monty-target-score {
+    font-size: 12px;
+    padding: 2px 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    width: 50px;
+}
 .monty-review-item {
     margin: 4px 0;
     font-size: 13px;
@@ -69,8 +76,23 @@ GM_addStyle(`
 (function() {
     'use strict';
 
-    const TARGET_SCORE = 4.3;
+    const DEFAULT_TARGET_SCORE = 4.3;
     const DEBUG_MODE = true; // 生产环境中关闭调试模式
+    
+    // 获取用户设置的目标分数
+    function getTargetScore() {
+        const savedScore = GM_getValue('target_score', DEFAULT_TARGET_SCORE);
+        // 确保分数在1-5之间
+        return Math.min(5, Math.max(1, parseFloat(savedScore)));
+    }
+    
+    // 设置用户目标分数
+    function setTargetScore(score) {
+        const validScore = Math.min(5, Math.max(1, parseFloat(score)));
+        log('设置目标分数:', validScore);
+        GM_setValue('target_score', validScore);
+        return validScore;
+    }
     
     // 日志输出函数
     function log(...args) {
@@ -168,69 +190,64 @@ GM_addStyle(`
             // 结果面板文本
             resultText: {
                 'en': {
-                    title: '📊 Review Analysis',
+                    title: 'Review Analysis',
                     currentScore: 'Current Rating:',
-                    required: 'Need',
+                    required: 'Need additional',
                     fiveStarReviews: '5-star reviews',
                     toReach: 'to reach',
                     noNeed: 'Current rating already exceeds',
                     noNeedSuffix: ', no additional reviews needed',
-                    simplified: '(Simplified)',
-                    note: 'Note: This is a simplified result due to inability to get detailed rating data',
-                    error: '⚠️ Review Calculator encountered an issue',
-                    errorHelp: 'If the problem persists, try refreshing the page or check for script updates.'
+                    error: 'Review Analysis Error',
+                    errorHelp: 'Please refresh the page or contact the developer for help',
+                    targetScore: 'Target Score'
                 },
                 'fr': {
-                    title: '📊 Analyse des Avis',
+                    title: 'Analyse des avis',
                     currentScore: 'Note actuelle:',
                     required: 'Besoin de',
-                    fiveStarReviews: 'avis 5 étoiles',
+                    fiveStarReviews: 'avis 5 étoiles supplémentaires',
                     toReach: 'pour atteindre',
                     noNeed: 'La note actuelle dépasse déjà',
                     noNeedSuffix: ', aucun avis supplémentaire nécessaire',
-                    simplified: '(Simplifié)',
-                    note: 'Remarque: Il s\'agit d\'un résultat simplifié en raison de l\'impossibilité d\'obtenir des données d\'évaluation détaillées',
-                    error: '⚠️ Le calculateur d\'avis a rencontré un problème',
-                    errorHelp: 'Si le problème persiste, essayez d\'actualiser la page ou vérifiez les mises à jour du script.'
+                    error: 'Erreur d\'analyse',
+                    errorHelp: 'Veuillez rafraîchir la page ou contacter le développeur pour obtenir de l\'aide',
+                    targetScore: 'Score cible'
                 },
                 'de': {
-                    title: '📊 Bewertungsanalyse',
+                    title: 'Bewertungsanalyse',
                     currentScore: 'Aktuelle Bewertung:',
-                    required: 'Benötigt',
+                    required: 'Benötigt zusätzlich',
                     fiveStarReviews: '5-Sterne-Bewertungen',
                     toReach: 'um zu erreichen',
                     noNeed: 'Aktuelle Bewertung überschreitet bereits',
                     noNeedSuffix: ', keine zusätzlichen Bewertungen erforderlich',
-                    simplified: '(Vereinfacht)',
-                    note: 'Hinweis: Dies ist ein vereinfachtes Ergebnis, da detaillierte Bewertungsdaten nicht verfügbar sind',
-                    error: '⚠️ Der Bewertungsrechner ist auf ein Problem gestoßen',
-                    errorHelp: 'Wenn das Problem weiterhin besteht, aktualisieren Sie die Seite oder prüfen Sie auf Skript-Updates.'
+                    error: 'Analysefehler',
+                    errorHelp: 'Bitte aktualisieren Sie die Seite oder kontaktieren Sie den Entwickler für Hilfe',
+                    targetScore: 'Zielbewertung'
                 },
                 'zh': {
-                    title: '📊 评论分析结果',
-                    currentScore: '当前评分：',
-                    required: '需要',
+                    title: '评论分析结果',
+                    currentScore: '当前评分:',
+                    required: '需要额外',
                     fiveStarReviews: '个五星好评',
                     toReach: '才能达到',
-                    noNeed: '当前评分已超过',
-                    noNeedSuffix: '，无需补充好评',
-                    simplified: '(简化版)',
-                    note: '注意：由于无法获取详细评分数据，此结果为简化版',
-                    error: '⚠️ 评论计算器遇到问题',
-                    errorHelp: '如果问题持续存在，请尝试刷新页面或检查脚本更新。'
+                    noNeed: '当前评分已达到',
+                    noNeedSuffix: '分，无需额外好评',
+                    error: '评论分析出错',
+                    errorHelp: '请刷新页面或联系开发者获取帮助',
+                    targetScore: '目标分数'
                 },
                 'jp': {
-                    title: '📊 レビュー分析',
-                    currentScore: '現在の評価：',
-                    required: '',
+                    title: 'レビュー分析',
+                    currentScore: '現在の評価:',
+                    required: 'あと',
                     fiveStarReviews: '件の5つ星レビューが必要',
-                    toReach: 'で到達するために',
-                    noNeed: '現在の評価はすでに',
-                    noNeedSuffix: 'を超えています、追加のレビューは必要ありません',
-                    simplified: '(簡易版)',
-                    note: '注意：詳細な評価データを取得できないため、これは簡易結果です',
-                    error: '⚠️ レビュー計算ツールで問題が発生しました',
-                    errorHelp: '問題が解決しない場合は、ページを更新するかスクリプトの更新を確認してください。'
+                    toReach: '目標の',
+                    noNeed: '現在の評価は既に',
+                    noNeedSuffix: 'を超えています。追加レビュー不要',
+                    error: '分析エラー',
+                    errorHelp: 'ページを更新するか、開発者にお問い合わせください',
+                    targetScore: '目標スコア'
                 }
                 // 可以根据需要添加更多语言
             }
@@ -265,11 +282,28 @@ GM_addStyle(`
     }
 
     // 计算所需五星好评
-    function calculateRequiredReviews(currentScore, totalReviews) {
-        if (currentScore >= TARGET_SCORE) return 0;
-
-        const numerator = totalReviews * (TARGET_SCORE - currentScore);
-        const denominator = 5 - TARGET_SCORE;
+    function calculateRequiredReviews(currentScore, totalReviews, targetScore = getTargetScore()) {
+        // 如果当前评分已经达到目标，则不需要额外的好评
+        if (currentScore >= targetScore) {
+            return 0;
+        }
+        
+        // 特殊情况：如果目标分数是5分，使用不同的计算方法
+        if (targetScore >= 5) {
+            // 计算达到5分需要的五星评价数
+            // 公式：(5 * (totalReviews + x) - currentScore * totalReviews) / (totalReviews + x) = 5
+            // 简化：x = (5 - currentScore) * totalReviews / (5 - 5) 无法计算
+            // 因此使用另一种方法：计算将所有非5星评价抵消所需的5星评价数
+            const nonFiveStarWeight = totalReviews * (5 - currentScore);
+            return Math.ceil(nonFiveStarWeight);
+        }
+        
+        // 常规情况：计算公式
+        // (目标评分 * (总评论数 + x) - 当前评分 * 总评论数) / (总评论数 + x) = 目标评分
+        // 简化后：x = (目标评分 * 总评论数 - 当前评分 * 总评论数) / (5 - 目标评分)
+        const numerator = targetScore * totalReviews - currentScore * totalReviews;
+        const denominator = 5 - targetScore;
+        
         return Math.ceil(numerator / denominator);
     }
 
@@ -380,9 +414,13 @@ GM_addStyle(`
             const currentScore = calculateWeightedAverage(ratings);
             log('计算得到的当前评分:', currentScore);
 
+            // 获取目标分数
+            const targetScore = getTargetScore();
+            log('目标评分:', targetScore);
+            
             // 计算结果
             log('计算所需五星好评数...');
-            const required = calculateRequiredReviews(currentScore, totalReviews);
+            const required = calculateRequiredReviews(currentScore, totalReviews, targetScore);
             log('需要的五星好评数:', required);
 
             // 生成结果面板
@@ -414,7 +452,14 @@ GM_addStyle(`
             resultBox.innerHTML = `
                 <div class="monty-review-title">
                     <span>${rt.title}</span>
-                    ${langSelector}
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="display: flex; align-items: center; font-size: 12px;">
+                            <label for="monty-target-score" style="margin-right: 4px;">${rt.targetScore || '目标分数'}:</label>
+                            <input type="number" id="monty-target-score" min="1" max="5" step="0.1" value="${targetScore}" 
+                                   style="width: 50px; padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px;">
+                        </div>
+                        ${langSelector}
+                    </div>
                 </div>
                 ${ratings.map(r => `
                     <div class="monty-review-item">
@@ -428,15 +473,17 @@ GM_addStyle(`
                 ${required > 0 ? `
                     <div class="monty-review-item">
                         ${rt.required} <span class="monty-highlight">${required} ${rt.fiveStarReviews}</span>
-                        ${rt.toReach} ${TARGET_SCORE}
+                        ${rt.toReach} ${targetScore}
                     </div>
                 ` : `
                     <div class="monty-review-item monty-highlight">
-                        ${rt.noNeed} ${TARGET_SCORE}${rt.noNeedSuffix}
+                        ${currentScore >= targetScore ? 
+                          `${rt.noNeed} ${targetScore}${rt.noNeedSuffix}` : 
+                          `${targetScore === 5 ? '无法达到满分5.0，需要无限个五星好评' : ''}`}
                     </div>
                 `}
                 <div class="monty-review-item" style="font-size: 12px; margin-top: 10px; text-align: right; color: #555; border-top: 1px solid #eee; padding-top: 8px;">
-                    © 2025 Monty Ng. All rights reserved.
+                    2025 Monty Ng. All rights reserved.
                 </div>
             `;
             
@@ -501,6 +548,31 @@ GM_addStyle(`
                 }
             }
             
+            // 添加目标分数输入框事件监听器
+            const targetScoreInput = document.getElementById('monty-target-score');
+            if (targetScoreInput) {
+                targetScoreInput.addEventListener('change', function() {
+                    const newScore = parseFloat(this.value);
+                    if (!isNaN(newScore) && newScore >= 1 && newScore <= 5) {
+                        log('修改目标分数:', newScore);
+                        const validScore = setTargetScore(newScore);
+                        this.value = validScore; // 确保显示有效的值
+                        
+                        // 重新计算所需评论数
+                        const currentScore = parseFloat(resultBox.dataset.currentScore);
+                        const totalReviews = parseInt(resultBox.dataset.totalReviews);
+                        const newRequired = calculateRequiredReviews(currentScore, totalReviews, validScore);
+                        resultBox.dataset.required = newRequired;
+                        
+                        // 重新生成结果面板
+                        regenerateResultPanel(resultBox);
+                    } else {
+                        // 恢复为有效值
+                        this.value = getTargetScore();
+                    }
+                });
+            }
+            
             // 重新生成结果面板的函数
             function regenerateResultPanel(panel) {
                 if (!panel) return;
@@ -508,8 +580,11 @@ GM_addStyle(`
                 // 获取保存的数据
                 const currentScore = parseFloat(panel.dataset.currentScore);
                 const totalReviews = parseInt(panel.dataset.totalReviews);
-                const required = parseInt(panel.dataset.required);
+                let required = parseInt(panel.dataset.required);
                 const ratings = JSON.parse(panel.dataset.ratingsData);
+                
+                // 获取当前目标分数
+                const targetScore = getTargetScore();
                 
                 // 获取新的本地化文本
                 const localizedText = getLocalizedText();
@@ -537,7 +612,14 @@ GM_addStyle(`
                 panel.innerHTML = `
                     <div class="monty-review-title">
                         <span>${rt.title}</span>
-                        ${langSelector}
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; font-size: 12px;">
+                                <label for="monty-target-score" style="margin-right: 4px;">${rt.targetScore || '目标分数'}:</label>
+                                <input type="number" id="monty-target-score" min="1" max="5" step="0.1" value="${targetScore}" 
+                                       style="width: 50px; padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px;">
+                            </div>
+                            ${langSelector}
+                        </div>
                     </div>
                     ${ratings.map(r => `
                         <div class="monty-review-item">
@@ -551,15 +633,17 @@ GM_addStyle(`
                     ${required > 0 ? `
                         <div class="monty-review-item">
                             ${rt.required} <span class="monty-highlight">${required} ${rt.fiveStarReviews}</span>
-                            ${rt.toReach} ${TARGET_SCORE}
+                            ${rt.toReach} ${targetScore}
                         </div>
                     ` : `
                         <div class="monty-review-item monty-highlight">
-                            ${rt.noNeed} ${TARGET_SCORE}${rt.noNeedSuffix}
+                            ${currentScore >= targetScore ? 
+                              `${rt.noNeed} ${targetScore}${rt.noNeedSuffix}` : 
+                              `${targetScore === 5 ? '无法达到满分5.0，需要无限个五星好评' : ''}`}
                         </div>
                     `}
                     <div class="monty-review-item" style="font-size: 12px; margin-top: 10px; text-align: right; color: #555; border-top: 1px solid #eee; padding-top: 8px;">
-                        © 2025 Monty Ng. All rights reserved.
+                        2025 Monty Ng. All rights reserved.
                     </div>
                 `;
                 
@@ -573,6 +657,31 @@ GM_addStyle(`
                         
                         // 重新生成结果面板
                         regenerateResultPanel(panel);
+                    });
+                }
+                
+                // 添加目标分数输入框事件监听器
+                const newTargetScoreInput = document.getElementById('monty-target-score');
+                if (newTargetScoreInput) {
+                    newTargetScoreInput.addEventListener('change', function() {
+                        const newScore = parseFloat(this.value);
+                        if (!isNaN(newScore) && newScore >= 1 && newScore <= 5) {
+                            log('修改目标分数:', newScore);
+                            const validScore = setTargetScore(newScore);
+                            this.value = validScore; // 确保显示有效的值
+                            
+                            // 重新计算所需评论数
+                            const currentScore = parseFloat(panel.dataset.currentScore);
+                            const totalReviews = parseInt(panel.dataset.totalReviews);
+                            const newRequired = calculateRequiredReviews(currentScore, totalReviews, validScore);
+                            panel.dataset.required = newRequired;
+                            
+                            // 重新生成结果面板
+                            regenerateResultPanel(panel);
+                        } else {
+                            // 恢复为有效值
+                            this.value = getTargetScore();
+                        }
                     });
                 }
             }
@@ -876,8 +985,8 @@ GM_addStyle(`
     // 初始化
     function init() {
         log('初始化脚本...');
-        log('目标评分:', TARGET_SCORE);
-        GM_setValue('target_score', TARGET_SCORE);
+        const targetScore = getTargetScore();
+        log('目标评分:', targetScore);
         
         // 确保我们在产品页面上
         log('当前页面路径:', window.location.pathname);
