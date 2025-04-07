@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         亚马逊评论计算优化版(Enhanced Amazon Review Calculator)
 // @namespace    https://github.com/monty8800/amazon-seller-tools
-// @version      3.6
+// @version      3.8
 // @description  精确计算各星级评价数量及提升评分所需五星好评数，支持全球亚马逊站点
 // @author       Monty & Assistant
 // @match        *://*.amazon.com/*dp/*
@@ -46,6 +46,7 @@ GM_addStyle(`
     background-color: white;
     padding: 1rem;
     margin: 1rem 0;
+    transition: all 0.3s ease;
   }
   
   /* 标题样式 */
@@ -58,6 +59,31 @@ GM_addStyle(`
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+  
+  /* 折叠/展开按钮 */
+  .monty-toggle-btn {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    transition: all 0.2s;
+  }
+  
+  .monty-toggle-btn:hover {
+    color: #4b5563;
+    background-color: #f3f4f6;
+  }
+  
+  /* 折叠状态样式 */
+  .monty-collapsed .monty-detail-section {
+    display: none;
+  }
+  
+  .monty-collapsed .monty-summary-section {
+    margin-bottom: 0;
   }
   
   /* 目标分数输入框 */
@@ -433,7 +459,8 @@ GM_addStyle(`
                     star: 'stars',
                     requiredReviews: 'Required 5-star reviews:',
                     alreadyAchieved: 'Target score already achieved',
-                    impossibleTarget: 'Cannot reach this target score'
+                    impossibleTarget: 'Cannot reach this target score',
+                    toggleView: 'Toggle view'
                 },
                 'fr': {
                     title: 'Analyse des avis',
@@ -449,7 +476,8 @@ GM_addStyle(`
                     star: 'étoiles',
                     requiredReviews: 'Avis 5 étoiles nécessaires:',
                     alreadyAchieved: 'Score cible déjà atteint',
-                    impossibleTarget: 'Impossible d\'atteindre ce score cible'
+                    impossibleTarget: 'Impossible d\'atteindre ce score cible',
+                    toggleView: 'Afficher/masquer'
                 },
                 'de': {
                     title: 'Bewertungsanalyse',
@@ -465,7 +493,8 @@ GM_addStyle(`
                     star: 'Sterne',
                     requiredReviews: 'Benötigte 5-Sterne-Bewertungen:',
                     alreadyAchieved: 'Zielbewertung bereits erreicht',
-                    impossibleTarget: 'Dieses Zielbewertung kann nicht erreicht werden'
+                    impossibleTarget: 'Dieses Zielbewertung kann nicht erreicht werden',
+                    toggleView: 'Ein-/Ausblenden'
                 },
                 'zh': {
                     title: '评论分析结果',
@@ -481,7 +510,8 @@ GM_addStyle(`
                     star: '星',
                     requiredReviews: '需要的五星好评数:',
                     alreadyAchieved: '已达到目标分数，无需额外好评',
-                    impossibleTarget: '无法达到该目标分数'
+                    impossibleTarget: '无法达到该目标分数',
+                    toggleView: '展开/折叠视图'
                 },
                 'jp': {
                     title: 'レビュー分析',
@@ -497,7 +527,8 @@ GM_addStyle(`
                     star: '星',
                     requiredReviews: '必要な5つ星レビュー:',
                     alreadyAchieved: '目標スコアは既に達成されています',
-                    impossibleTarget: 'この目標スコアには到達できません'
+                    impossibleTarget: 'この目標スコアには到達できません',
+                    toggleView: '表示切替'
                 },
                 'ja': {
                     title: 'レビュー分析',
@@ -513,7 +544,8 @@ GM_addStyle(`
                     star: '星',
                     requiredReviews: '必要な5つ星レビュー:',
                     alreadyAchieved: '目標スコアは既に達成されています',
-                    impossibleTarget: 'この目標スコアには到達できません'
+                    impossibleTarget: 'この目標スコアには到達できません',
+                    toggleView: '表示切替'
                 }
                 // 可以根据需要添加更多语言
             }
@@ -782,28 +814,61 @@ GM_addStyle(`
             resultBox.innerHTML = `
                 <div class="p-4">
                     <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-lg font-semibold text-gray-800">${rt.title}</h3>
+                        <div class="flex items-center">
+                            <h3 class="text-lg font-semibold text-gray-800">${rt.title}</h3>
+                            <button id="monty-toggle-btn" class="monty-toggle-btn ml-2" title="${rt.toggleView || '展开/折叠视图'}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                        </div>
                         ${langSelector}
                     </div>
                     
-                    <!-- 评分分布图表 -->
-                    <div class="mb-3">
-                        ${ratingBarsHtml}
+                    <!-- 重要信息摘要（始终显示） -->
+                    <div class="monty-summary-section mb-3">
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-gray-700">${rt.currentScore}</span>
+                            <span class="font-medium text-blue-600 text-lg">${currentScore.toFixed(2)}</span>
+                        </div>
+                        
+                        <!-- 如果有需要的好评数，显示在摘要中 -->
+                        ${required > 0 ? `
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-gray-700">${rt.requiredReviews}</span>
+                            <span class="font-medium text-blue-600 text-lg">${required}</span>
+                        </div>` : ''}
                     </div>
                     
-                    <div class="border-t border-gray-200 my-2"></div>
-                    
-                    <!-- 当前评分 -->
-                    <div class="flex justify-between items-center py-1">
-                        <span class="text-gray-700">${rt.currentScore}</span>
-                        <span class="font-medium text-blue-600 text-lg">${currentScore.toFixed(2)}</span>
+                    <!-- 详细信息（可折叠） -->
+                    <div class="monty-detail-section">
+                        <!-- 评分分布图表 -->
+                        <div class="mb-3">
+                            ${ratingBarsHtml}
+                        </div>
+                        
+                        <div class="border-t border-gray-200 my-2"></div>
+                        
+                        <!-- 目标分数设置 -->
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-gray-700">${rt.targetScore}</span>
+                            <div class="flex items-center">
+                                <input type="number" id="monty-target-score" class="w-16 px-2 py-1 mr-2 text-center border border-gray-300 rounded" 
+                                    value="${targetScore}" min="1" max="5" step="0.1">
+                            </div>
+                        </div>
+                        ${required < 0 ? `
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-gray-700">${rt.impossibleTarget}</span>
+                        </div>` : ''}
+                        ${required === 0 ? `
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-gray-700">${rt.alreadyAchieved}</span>
+                        </div>` : ''}
                     </div>
-                    
-                    <!-- 所需好评数 -->
-                    ${requiredHtml}
                     
                     <div class="border-t border-gray-200 mt-3 pt-2 text-right text-xs text-gray-500">
-                        © 2025 Monty Ng. All rights reserved.
+                        &copy; 2025 Monty Ng. All rights reserved.
                     </div>
                 </div>
             `;
@@ -869,6 +934,46 @@ GM_addStyle(`
                     } else {
                         // 恢复为有效值
                         this.value = getTargetScore();
+                    }
+                });
+            }
+            
+            // 添加折叠/展开按钮事件监听器
+            const toggleBtn = document.getElementById('monty-toggle-btn');
+            if (toggleBtn) {
+                // 检查是否有保存的折叠状态
+                const isPanelCollapsed = localStorage.getItem('monty-panel-collapsed') === 'true';
+                
+                // 根据保存的状态设置初始折叠状态
+                if (isPanelCollapsed) {
+                    resultBox.classList.add('monty-collapsed');
+                    toggleBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="18 15 12 9 6 15"></polyline>
+                        </svg>
+                    `;
+                }
+                
+                toggleBtn.addEventListener('click', function() {
+                    resultBox.classList.toggle('monty-collapsed');
+                    const isCollapsed = resultBox.classList.contains('monty-collapsed');
+                    
+                    // 保存折叠状态到localStorage
+                    localStorage.setItem('monty-panel-collapsed', isCollapsed);
+                    
+                    // 更新按钮图标
+                    if (isCollapsed) {
+                        this.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="18 15 12 9 6 15"></polyline>
+                            </svg>
+                        `;
+                    } else {
+                        this.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        `;
                     }
                 });
             }
@@ -1021,21 +1126,15 @@ function showError(message) {
         
         if (required > 0) {
             requiredHtml = `
-            <div class="border-t border-gray-200 my-2"></div>
             <div class="flex justify-between items-center py-1">
                 <span class="text-gray-700">${rt.targetScore}</span>
                 <div class="flex items-center">
                     <input type="number" id="monty-target-score" class="w-16 px-2 py-1 mr-2 text-center border border-gray-300 rounded" 
                         value="${targetScore}" min="1" max="5" step="0.1">
                 </div>
-            </div>
-            <div class="flex justify-between items-center py-1">
-                <span class="text-gray-700">${rt.requiredReviews}</span>
-                <span class="font-medium text-blue-600 text-lg">${required}</span>
             </div>`;
         } else if (required === 0) {
             requiredHtml = `
-            <div class="border-t border-gray-200 my-2"></div>
             <div class="flex justify-between items-center py-1">
                 <span class="text-gray-700">${rt.targetScore}</span>
                 <div class="flex items-center">
@@ -1048,7 +1147,6 @@ function showError(message) {
             </div>`;
         } else {
             requiredHtml = `
-            <div class="border-t border-gray-200 my-2"></div>
             <div class="flex justify-between items-center py-1">
                 <span class="text-gray-700">${rt.targetScore}</span>
                 <div class="flex items-center">
@@ -1065,28 +1163,61 @@ function showError(message) {
         panel.innerHTML = `
             <div class="p-4">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold text-gray-800">${rt.title}</h3>
+                    <div class="flex items-center">
+                        <h3 class="text-lg font-semibold text-gray-800">${rt.title}</h3>
+                        <button id="monty-toggle-btn" class="monty-toggle-btn ml-2" title="${rt.toggleView || '展开/折叠视图'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                    </div>
                     ${langSelector}
                 </div>
                 
-                <!-- 评分分布图表 -->
-                <div class="mb-3">
-                    ${ratingBarsHtml}
+                <!-- 重要信息摘要（始终显示） -->
+                <div class="monty-summary-section mb-3">
+                    <div class="flex justify-between items-center py-1">
+                        <span class="text-gray-700">${rt.currentScore}</span>
+                        <span class="font-medium text-blue-600 text-lg">${currentScore.toFixed(2)}</span>
+                    </div>
+                    
+                    <!-- 如果有需要的好评数，显示在摘要中 -->
+                    ${required > 0 ? `
+                    <div class="flex justify-between items-center py-1">
+                        <span class="text-gray-700">${rt.requiredReviews}</span>
+                        <span class="font-medium text-blue-600 text-lg">${required}</span>
+                    </div>` : ''}
                 </div>
                 
-                <div class="border-t border-gray-200 my-2"></div>
-                
-                <!-- 当前评分 -->
-                <div class="flex justify-between items-center py-1">
-                    <span class="text-gray-700">${rt.currentScore}</span>
-                    <span class="font-medium text-blue-600 text-lg">${currentScore.toFixed(2)}</span>
+                <!-- 详细信息（可折叠） -->
+                <div class="monty-detail-section">
+                    <!-- 评分分布图表 -->
+                    <div class="mb-3">
+                        ${ratingBarsHtml}
+                    </div>
+                    
+                    <div class="border-t border-gray-200 my-2"></div>
+                    
+                    <!-- 目标分数设置 -->
+                    <div class="flex justify-between items-center py-1">
+                        <span class="text-gray-700">${rt.targetScore}</span>
+                        <div class="flex items-center">
+                            <input type="number" id="monty-target-score" class="w-16 px-2 py-1 mr-2 text-center border border-gray-300 rounded" 
+                                value="${targetScore}" min="1" max="5" step="0.1">
+                        </div>
+                    </div>
+                    ${required < 0 ? `
+                    <div class="flex justify-between items-center py-1">
+                        <span class="text-gray-700">${rt.impossibleTarget}</span>
+                    </div>` : ''}
+                    ${required === 0 ? `
+                    <div class="flex justify-between items-center py-1">
+                        <span class="text-gray-700">${rt.alreadyAchieved}</span>
+                    </div>` : ''}
                 </div>
-                
-                <!-- 所需好评数 -->
-                ${requiredHtml}
                 
                 <div class="border-t border-gray-200 mt-3 pt-2 text-right text-xs text-gray-500">
-                    © 2025 Monty Ng. All rights reserved.
+                    &copy; 2025 Monty Ng. All rights reserved.
                 </div>
             </div>
         `;
@@ -1110,15 +1241,57 @@ function showError(message) {
                 if (!isNaN(newScore) && newScore >= 1 && newScore <= 5) {
                     log('修改目标分数:', newScore);
                     const validScore = setTargetScore(newScore);
-                    this.value = validScore; // 确保显示有效的值
                     
-                    // 重新计算所需评论数
+                    // 重新计算所需的五星好评数
+                    const currentScore = parseFloat(panel.dataset.currentScore || '0');
+                    const totalReviews = parseInt(panel.dataset.totalReviews || '0');
                     const newRequired = calculateRequiredReviews(currentScore, totalReviews, validScore);
+                    
+                    // 更新面板数据集
                     panel.dataset.required = newRequired;
                     
                     // 重新生成结果面板
                     regenerateResultPanel(panel);
+                }
+            });
+        }
+        
+        // 添加折叠/展开按钮事件监听器
+        const toggleBtn = document.getElementById('monty-toggle-btn');
+        if (toggleBtn) {
+            // 检查是否有保存的折叠状态
+            const isPanelCollapsed = localStorage.getItem('monty-panel-collapsed') === 'true';
+            
+            // 根据保存的状态设置初始折叠状态
+            if (isPanelCollapsed) {
+                panel.classList.add('monty-collapsed');
+                toggleBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                `;
+            }
+            
+            toggleBtn.addEventListener('click', function() {
+                panel.classList.toggle('monty-collapsed');
+                const isCollapsed = panel.classList.contains('monty-collapsed');
+                
+                // 保存折叠状态到localStorage
+                localStorage.setItem('monty-panel-collapsed', isCollapsed);
+                
+                // 更新按钮图标
+                if (isCollapsed) {
+                    this.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="18 15 12 9 6 15"></polyline>
+                        </svg>
+                    `;
                 } else {
+                    this.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    `;
                     // 恢复为有效值
                     this.value = getTargetScore();
                 }
